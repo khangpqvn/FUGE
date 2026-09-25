@@ -30,9 +30,9 @@ export interface TeacherGrade {
 export interface ThesisStudent {
   Roll: string
   Name: string
-  Agree_to_defense: string
-  Revised_for_the_second_defense: string
-  Disagree_to_defense: string
+  Agree_to_defense: string | null
+  Revised_for_the_second_defense: string | null
+  Disagree_to_defense: string | null
   Note: string
 }
 
@@ -63,7 +63,7 @@ export interface FinalThesisGradingItem {
 }
 
 export interface GradedItem {
-  GroupItem: string
+  GroupItem: string | null
   ItemName: string
   Scale: number
   GroupMark: number
@@ -87,6 +87,33 @@ export interface DefenseGrading {
   GroupMark: number
   GradedTime: string
   GradedTeacher: string
+  SupervisorComment: ThesisComment | null
+  Password: string
   Note: string
   GradeStudents: DefenseStudentGrade[]
 }
+
+export type DocumentKind = 'teacher-grade' | 'thesis-comment' | 'defense-grading' | 'final-thesis-grading-items'
+export type SourceFormat = 'fg' | 'cmt' | 'tef' | 'master' | 'json'
+
+export interface CanonicalMetadata {
+  fileName: string
+  sourceFormat: SourceFormat
+  sourceLegacyType?: string
+  importedAt: string
+}
+
+export interface CanonicalDocument<T> {
+  format: 'fugrade.canonical'
+  schemaVersion: 1
+  kind: DocumentKind
+  metadata: CanonicalMetadata
+  data: T
+}
+
+export type FinalThesisGradingItemsDocument = CanonicalDocument<{ items: FinalThesisGradingItem[] }>
+export type WorkflowDocument =
+  | CanonicalDocument<TeacherGrade>
+  | CanonicalDocument<ThesisComment>
+  | CanonicalDocument<DefenseGrading>
+  | FinalThesisGradingItemsDocument

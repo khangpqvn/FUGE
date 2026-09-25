@@ -12,9 +12,11 @@ function bytesToBase64(bytes: Uint8Array) {
   return btoa(binary)
 }
 
-function base64ToBytes(value: string) {
+function base64ToBytes(value: string): Uint8Array<ArrayBuffer> {
   const binary = atob(value.trim())
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0))
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length))
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes
 }
 
 function normalizeTeacherGrade(value: unknown): TeacherGrade {
@@ -41,14 +43,43 @@ function normalizeTeacherGrade(value: unknown): TeacherGrade {
   }
 }
 
-export async function decryptLegacyFg(file: File, password = ''): Promise<TeacherGrade> {
-  const encrypted = await crypto.subtle.importKey('raw', LEGACY_KEY, { name: 'AES-CBC' }, false, ['decrypt'])
-  const cipherText = base64ToBytes(await file.text())
-  const plainBuffer = await crypto.subtle.decrypt({ name: 'AES-CBC', iv: ZERO_IV }, encrypted, cipherText)
-  const parsed = JSON.parse(new TextDecoder().decode(plainBuffer)) as TeacherGrade
-  const data = normalizeTeacherGrade(parsed)
+/** Decrypts and normalizes a legacy `.fg` payload without applying its password gate. */
+export async function readLegacyFg(file: File): Promise<TeacherGrade> {
+  let cipherText: Uint8Array<ArrayBuffer>
+  try {
+    cipherText = base64ToBytes(await file.text())
+  } catch {
+    throw new Error('This file is not a FuGrade .fg document: the Base64 envelope is unreadable.')
+  }
 
-  if (data.Password && !(await verifyMd5(password, data.Password))) {
+  let plainBuffer: ArrayBuffer
+  try {
+    const key = await crypto.subtle.importKey('raw', LEGACY_KEY, { name: 'AES-CBC' }, false, ['decrypt'])
+    plainBuffer = await crypto.subtle.decrypt({ name: 'AES-CBC', iv: ZERO_IV }, key, cipherText)
+  } catch {
+    throw new Error('Could not decrypt this .fg file. BinaryFormatter-era .fg files need the isolated converter.')
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(plainBuffer))
+  } catch {
+    throw new Error('The decrypted .fg content is not valid JSON.')
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || !Array.isArray((parsed as TeacherGrade).SubjectClassGrades)) {
+    throw new Error('The .fg document does not contain a TeacherGrade root object.')
+  }
+  return normalizeTeacherGrade(parsed)
+}
+
+export function requiresPassword(sheet: TeacherGrade) {
+  return sheet.Password.trim() !== ''
+}
+
+export async function decryptLegacyFg(file: File, password = ''): Promise<TeacherGrade> {
+  const data = await readLegacyFg(file)
+  if (requiresPassword(data) && !(await verifyMd5(password, data.Password))) {
     throw new Error('Incorrect password for this grading file.')
   }
   return data
