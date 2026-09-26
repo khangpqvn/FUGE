@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { canonicalJsonBlob, makeCanonicalDocument, parseCanonicalJson } from './canonical-json'
 import { PasswordRequiredError, importWorkflowFile } from './file-import'
 import { encryptLegacyFg } from './legacy-fg'
-import { legacyExtensionForKind } from './legacy-bridge'
+import { legacyExtensionForKind } from './legacy-codec'
 import type { TeacherGrade, WorkflowDocument } from '../types/models'
 
 const sheet: TeacherGrade = {
@@ -92,10 +92,46 @@ describe('importWorkflowFile', () => {
     await expect(importWorkflowFile(new File([], 'empty.fg'), '')).rejects.toThrow(/between 1 byte/)
   })
 
-  it('reports that the converter is required for BinaryFormatter formats', async () => {
+  it('rejects malformed local BinaryFormatter formats', async () => {
     for (const name of ['group.cmt', 'form.tef', 'FinalThesisGradingItems.master']) {
-      await expect(importWorkflowFile(new File([new Uint8Array([0, 1, 0, 0, 0])], name), '')).rejects.toThrow(/converter is not configured/i)
+      await expect(importWorkflowFile(new File([new Uint8Array([0, 1, 0, 0, 0])], name), '')).rejects.toThrow(/truncated|unsupported|invalid|need .* byte/i)
     }
+  })
+
+  it('allows opening password-protected .tef in read-only mode without password', async () => {
+    const defenseData = {
+      SubjectCode: 'SEP490',
+      TitleVN: 'Tiêu đề VN',
+      TitleEN: 'Title EN',
+      Supervisor: 'supervisor',
+      ClassName: 'SE1732',
+      Semester: 'Summer 2026',
+      GroupMark: 0,
+      GradedTime: '2026-09-26T00:00:00.000Z',
+      GradedTeacher: 'Nguyen Van An',
+      SupervisorComment: null,
+      Password: '900150983cd24fb0d6963f7d28e17f72',
+      Note: '',
+      GradeStudents: [
+        {
+          Roll: 'HE173247',
+          Name: 'Khang',
+          Conclusion: 'Agree to defense',
+          GradedItems: [{ GroupItem: null, ItemName: 'Item 1', Scale: 10, GroupMark: 8, Mark: 8 }],
+        },
+      ],
+    }
+    const doc = makeCanonicalDocument('defense-grading', defenseData, 'form.tef', 'tef') as WorkflowDocument
+    const blob = await (await import('./legacy-codec')).exportLegacyBinary(doc)
+    const file = new File([await blob.arrayBuffer()], 'guarded.tef')
+
+    // Fails without password when readOnly is false
+    await expect(importWorkflowFile(file, '', false)).rejects.toBeInstanceOf(PasswordRequiredError)
+
+    // Succeeds when allowReadOnly is true
+    const openedReadOnly = await importWorkflowFile(file, '', true)
+    expect(openedReadOnly.kind).toBe('defense-grading')
+    expect(openedReadOnly.data).toEqual(defenseData)
   })
 })
 

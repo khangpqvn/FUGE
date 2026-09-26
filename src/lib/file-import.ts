@@ -11,7 +11,7 @@ import type {
 import { parseCanonicalJson } from './canonical-json'
 import { validatePayload } from './document-validation'
 import { readLegacyFg, requiresPassword, verifyMd5 } from './legacy-fg'
-import { importLegacyBinary } from './legacy-bridge'
+import { importLegacyBinary } from './legacy-codec'
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024
 
@@ -23,14 +23,14 @@ export class PasswordRequiredError extends Error {
   }
 }
 
-export async function importWorkflowFile(file: File, password: string): Promise<WorkflowDocument> {
+export async function importWorkflowFile(file: File, password: string, allowReadOnly = false): Promise<WorkflowDocument> {
   if (!file.size || file.size > MAX_FILE_BYTES) throw new Error('File must be between 1 byte and 8 MB.')
   const extension = extensionOf(file.name)
   let document: WorkflowDocument
 
   if (extension === '.fg') {
     const data = await readLegacyFg(file)
-    if (requiresPassword(data)) {
+    if (requiresPassword(data) && !allowReadOnly) {
       if (!password) throw new PasswordRequiredError()
       if (!(await verifyMd5(password, data.Password))) throw new Error('Incorrect password for this grading file.')
     }
@@ -42,7 +42,7 @@ export async function importWorkflowFile(file: File, password: string): Promise<
   } else if (extension === '.cmt' || extension === '.tef' || extension === '.master') {
     document = await importLegacyBinary(file)
     const protectedHash = protectedPasswordHash(document)
-    if (protectedHash) {
+    if (protectedHash && !allowReadOnly) {
       if (!password) throw new PasswordRequiredError()
       if (!(await verifyMd5(password, protectedHash))) throw new Error('Incorrect password for this grading file.')
     }

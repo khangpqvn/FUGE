@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Eraser, Plus, Search, UserPlus } from 'lucide-react'
+import { Eraser, MessageSquare, Plus, Search, UserPlus } from 'lucide-react'
 import type { GradeValue, SubjectClassGrade, TeacherGrade } from '../types/models'
 import {
   MERGED_CLASS_LABEL,
@@ -22,9 +22,10 @@ import { PanelSection } from './form-controls'
 interface Props {
   sheet: TeacherGrade
   onChange: (sheet: TeacherGrade) => void
+  onCreateThesisComment?: (group: SubjectClassGrade) => void
 }
 
-export function GradingSheetPanel({ sheet, onChange }: Props) {
+export function GradingSheetPanel({ sheet, onChange, onCreateThesisComment }: Props) {
   const [groupIndex, setGroupIndex] = useState(0)
   const [merge, setMerge] = useState(false)
   const [query, setQuery] = useState('')
@@ -264,15 +265,32 @@ export function GradingSheetPanel({ sheet, onChange }: Props) {
         title={`${activeGroup.Subject} · ${activeGroup.Class}`}
         description={`${students.length} of ${activeGroup.Students.length} students · ${visibleComponents.length} of ${activeGroup.Components.length} components shown`}
         action={
-          <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" size={16} />
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search roll or name"
-              className="w-56 rounded-lg border border-slate-300 py-2 pr-3 pl-9 text-sm outline-none focus-visible:border-blue-500"
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            {onCreateThesisComment && activeGroup.Students.length > 0 ? (
+              <button
+                type="button"
+                disabled={activeGroup.Students.length > 6}
+                onClick={() => onCreateThesisComment(activeGroup)}
+                title={
+                  activeGroup.Students.length <= 6
+                    ? 'Write thesis comment (.cmt) for this group'
+                    : 'Thesis comment is only available for classes with ≤ 6 students (MaxThesisGroupSize = 6)'
+                }
+                className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                <MessageSquare size={14} /> Write thesis comment
+              </button>
+            ) : null}
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search roll or name"
+                className="w-48 rounded-lg border border-slate-300 py-1.5 pr-3 pl-9 text-xs outline-none focus-visible:border-blue-500"
+              />
+            </div>
           </div>
         }
       >

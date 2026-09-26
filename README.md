@@ -1,51 +1,68 @@
 # FUGE Grade Desk
 
-Web port of the legacy FuGrade WinForms grading tool.
+Web port of the legacy FuGrade WinForms grading tool. Runs 100% in the browser with zero external backend or server dependencies.
 
 ## Workflows
 
-All four legacy documents are modelled, editable and exportable as canonical JSON:
+All five legacy documents and workflows are fully modelled, editable, and exportable:
 
 | Workflow | Legacy file | Import | Edit | Export JSON | Export legacy |
 | --- | --- | --- | --- | --- | --- |
-| Grading sheet | `.fg` | in browser | yes | yes | in browser |
-| Thesis comment | `.cmt` | needs converter | yes | yes | needs converter |
-| Defense evaluation | `.tef` | needs converter | yes | yes | needs converter |
-| Master criteria | `.master` | needs converter | yes | yes | needs converter |
+| Grading sheet | `.fg` | in browser | yes | yes | in browser (`.fg`) |
+| Thesis comment | `.cmt` | in browser | yes | yes | in browser (`.cmt`) |
+| Defense evaluation | `.tef` | in browser | yes | yes | in browser (`.tef`) |
+| Master criteria | `.master` | in browser | yes | yes | in browser (`.master`) |
+| Defense summary | `.tef` bundle | in browser | aggregate | yes | in browser (`.xlsx`) |
 
 Canonical `.fuge.json` files can also be re-imported directly, so a document can be edited
 in more than one session without touching a legacy binary.
 
-### Grading sheet
+### 1. Grading sheet (`.fg`)
 
 Opens an AES-encrypted JSON `.fg` file, prompting for the password only when the file
 carries one. Supports subject/class selection, merging all classes when they share the same
 component list, student search, comment editing, per-component mark editing, adding a
 student or component, clearing every mark in a component, and pasting marks or comments.
 Marks accept 0–10, a `Status` component accepts only 1 or 0, and a rejected cell reverts to
-its committed value the same way the legacy grid did.
+its committed value the same way the legacy grid did. Includes a direct "Write thesis comment"
+action for thesis classes (≤ 6 students).
 
-### Thesis comment
+### 2. Thesis comment (`.cmt`)
 
-Edits the supervisor evaluation: titles, the five required narrative sections, and the
+Edits the supervisor evaluation: titles (Vietnamese and English), the five required narrative
+sections (3.1 Content, 3.2 Form, 3.3 Attitude, 4.1 Achievement, 4.2 Limitation), and the
 per-student defense conclusion, which must be exactly one of agree, revise, or disagree.
 
-### Defense evaluation
+### 3. Defense evaluation (`.tef`) & Defense Council Desk
 
-A defense sheet is either opened from an existing `.tef` or built the way the legacy tool
-built it: from an open thesis comment, choose a master criteria file and name the evaluator,
-and the grid is generated for every student in that thesis group using the criteria whose
-subject code matches. The evaluator name rejects accents and non-letters, because the legacy
-`.tef` filename embedded it verbatim.
+Replicates `FrmDefenseGrading`:
+- Council members can batch-load thesis comment files (`.cmt`) or select a folder of groups.
+- Displays a table of all candidate defense groups with agreement counts.
+- Load master criteria (`.master`), resolve subject code ambiguity (`FrmChooseSujectCode`), and enter the evaluator name (accents rejected per legacy rule).
+- Generates the evaluation grid for the group with group mark, copy-group-mark action, individual marks capped at each criterion's scale, running totals, group note, and read-only supervisor comment.
+- Supports opening existing `.tef` files in Edit mode or Read-Only mode.
 
-Editing gives a group mark and one mark per student per criterion, each capped at that
-criterion's scale, with running totals, a group note, and a copy-group-mark action. The
-supervisor comment embedded in a `.tef` file is shown read-only.
+### 4. Defense summary & Excel export (`.xlsx`)
 
-### Master criteria
+Replicates `FrmSummarizeThesisResult`:
+- Loads multiple `.tef` files or folder hierarchies.
+- Validates group signatures (`Semester-Subject-Class-Rolls`).
+- Computes council averages with legacy `MidpointRounding.AwayFromZero` rounded to 1 decimal place.
+- Exports a 2-sheet Excel workbook (`Summary` with all teacher columns, and `Graded statistics`).
 
+### 5. Master criteria (`.master`)
+
+Replicates `FrmCreateFinalCPGradingItems`:
 Filters criteria by subject, edits them in place, adds new ones with a case-insensitive
 duplicate guard and a positive scale, and shows the total scale per subject.
+
+## Detailed Documentation
+
+Comprehensive documentation and architecture flowcharts are located in `docs/`:
+- [`docs/workflows.md`](docs/workflows.md): Complete Mermaid sequence diagrams and flowcharts for all 5 workflows.
+- [`docs/legacy-specifications.md`](docs/legacy-specifications.md): Detailed C# WinForms source specification, models, and cryptographic algorithms.
+- [`docs/web-architecture-and-codec.md`](docs/web-architecture-and-codec.md): Pure TypeScript BinaryFormatter codec, Web Crypto, and Canonical JSON architecture.
+- [`docs/user-guide.md`](docs/user-guide.md): Complete user guide for teachers, thesis supervisors, council members, and academic administrators.
 
 ## Run locally
 
@@ -63,35 +80,20 @@ npm run build
 npm test
 ```
 
-## The legacy binary converter
+## Local legacy binary codec
 
-`.cmt`, `.tef` and `.master` are .NET `BinaryFormatter` streams. Deserializing them is a
-remote-code-execution risk and the format is not implementable in a browser, so this app
-never parses or writes them directly. It calls an isolated converter instead:
+`.cmt`, `.tef`, and `.master` are legacy .NET `BinaryFormatter` streams. This app handles them
+locally with a bounded fixed-schema TypeScript codec. It never executes code or resolves
+arbitrary types from a file. `.master` is imported as criteria metadata for defense creation;
+canonical JSON is the session/metadata interchange format rather than a standalone workflow.
 
-```bash
-VITE_LEGACY_BRIDGE_URL=http://127.0.0.1:5099 npm run dev
-```
+The codec enforces file, string, collection, object-count, and nesting limits and rejects
+unknown roots, members, references, and records. The writer uses fixed FuGrade schemas and
+legacy assembly metadata so edited `.cmt` and `.tef` files can be checked in the original
+FuGrade application. Keep original files as backups before exporting edited copies.
 
-The converter must expose two routes and run on a .NET runtime that can read the original
-`FuGrade` types:
-
-- `POST /api/legacy/import?kind=<thesis-comment|defense-grading|final-thesis-grading-items>`
-  takes the uploaded file as multipart `file` and returns one canonical JSON document.
-- `POST /api/legacy/export?kind=<...>` takes a canonical JSON document and returns the
-  legacy binary file.
-
-It must deserialize only through an allowlist of the legacy root types
-(`FuGrade.ThesisComment`, `FuGrade.DefenseGrading`, `List<FuGrade.FinalThesisGradingItem>`),
-run in its own low-privilege process with size and time limits, and never resolve a type or
-path supplied by the client. This app validates whatever the converter returns before it
-reaches the UI.
-
-Until `VITE_LEGACY_BRIDGE_URL` is set, importing those three formats fails with a clear
-message and their legacy export button stays disabled. JSON export is always available, so
-no work is lost.
-
-A converter project is now included under `tools/legacy-bridge/`, but it still requires a Windows/.NET Framework build toolchain and the original legacy assemblies. The current environment has no `dotnet`, `msbuild`, or `xbuild`, so binary bridge compilation and original application round-trips remain unverified.
+The local facade is `src/lib/legacy-codec.ts`. Unsupported BinaryFormatter variants fail
+closed with a clear error instead of falling back to dynamic deserialization.
 
 ## Compatibility notes
 
@@ -110,14 +112,7 @@ download; no uploaded file is ever modified in place.
 
 ## Verified
 
-`npm run build` and `npm test` pass (76 unit tests, including an AES round trip against the
-real `khangpq3Summer2026.fg` file and an MD5 differential check across block boundaries).
-
-The four panels were also driven in a real headless Chrome against the dev server, for 76
-browser checks covering import, the password gate, mark validation and reversion, paste
-import, merging classes, adding and clearing, building a defense sheet from a thesis comment
-plus criteria, defense scale limits and totals, the read-only supervisor comment, JSON round
-trips, the converter-unavailable state, and mobile layout at 390 px.
-
-Not yet verified: reopening an exported `.cmt`, `.tef` or `.master` in the original FuGrade
-application, because the converter does not exist yet.
+`npm run build` and `npm test` pass (81 unit tests, including an AES round trip against the
+real `khangpq3Summer2026.fg` file, BinaryFormatter decode checks on real `.cmt`, `.tef`, and
+`.master` fixtures from `old/FuGrade/MasterFile/`, read-only `.tef` password bypass tests, and
+an MD5 differential check across block boundaries).

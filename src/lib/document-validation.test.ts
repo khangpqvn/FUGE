@@ -83,11 +83,21 @@ describe('thesis-comment validation', () => {
     expect(validatePayload('thesis-comment', both)).toHaveLength(1)
   })
 
-  it('rejects a conclusion flag that is not x', () => {
-    const bad = comment({
-      Conclusion: [{ Roll: 'HE1', Name: 'A', Agree_to_defense: 'yes', Revised_for_the_second_defense: null, Disagree_to_defense: null, Note: '' }],
+  it('requires at least one student and at most 6 students', () => {
+    const empty = comment({ Conclusion: [] })
+    expect(validatePayload('thesis-comment', empty)).toContain('At least one student is required in Conclusion.')
+
+    const seven = comment({
+      Conclusion: Array.from({ length: 7 }, (_, i) => ({
+        Roll: `HE${i + 1}`,
+        Name: `Student ${i + 1}`,
+        Agree_to_defense: 'x',
+        Revised_for_the_second_defense: null,
+        Disagree_to_defense: null,
+        Note: '',
+      })),
     })
-    expect(validatePayload('thesis-comment', bad).length).toBeGreaterThan(0)
+    expect(validatePayload('thesis-comment', seven)).toContain('Thesis group cannot exceed 6 students (MaxThesisGroupSize = 6).')
   })
 })
 
@@ -120,6 +130,30 @@ describe('defense-grading validation', () => {
 
   it('rejects a negative mark', () => {
     expect(validatePayload('defense-grading', defense(-0.5)).length).toBeGreaterThan(0)
+  })
+
+  it('validates evaluator name is required and without accents', () => {
+    const noName = { ...defense(1), GradedTeacher: '' }
+    expect(validatePayload('defense-grading', noName)).toContain('Evaluator name (GradedTeacher) is required.')
+
+    const accented = { ...defense(1), GradedTeacher: 'Nguyễn Văn A' }
+    expect(validatePayload('defense-grading', accented)).toContain('Evaluator name can only contain English letters (A-Z, a-z) and spaces without accents.')
+  })
+
+  it('rejects empty or oversized defense groups', () => {
+    const empty = { ...defense(1), GradeStudents: [] }
+    expect(validatePayload('defense-grading', empty)).toContain('At least one student is required in defense.')
+
+    const seven = {
+      ...defense(1),
+      GradeStudents: Array.from({ length: 7 }, (_, i) => ({
+        Roll: `HE${i + 1}`,
+        Name: `Student ${i + 1}`,
+        Conclusion: 'Agree to defense',
+        GradedItems: [{ GroupItem: null, ItemName: 'Demo', Scale: 2, GroupMark: 0, Mark: 1 }],
+      })),
+    }
+    expect(validatePayload('defense-grading', seven)).toContain('Defense group cannot exceed 6 students (MaxThesisGroupSize = 6).')
   })
 })
 

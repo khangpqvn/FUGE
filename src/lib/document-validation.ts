@@ -29,23 +29,36 @@ export function validatePayload(kind: DocumentKind, data: unknown): string[] {
       if (!comment[field]?.trim()) errors.push(`${field} is required.`)
     }
     if (!Array.isArray(comment.Conclusion)) errors.push('Conclusion must be a list.')
-    else comment.Conclusion.forEach((student) => {
-      const flags = [student.Agree_to_defense, student.Revised_for_the_second_defense, student.Disagree_to_defense]
-      if (flags.filter((value) => value?.trim().toLowerCase() === 'x').length !== 1) {
-        errors.push(`${student.Roll || student.Name}: choose exactly one defense conclusion.`)
-      }
-      if (flags.some((value) => value && !['x', 'X'].includes(value))) errors.push(`${student.Roll}: conclusion values must be x or empty.`)
-    })
+    else {
+      if (comment.Conclusion.length === 0) errors.push('At least one student is required in Conclusion.')
+      if (comment.Conclusion.length > 6) errors.push('Thesis group cannot exceed 6 students (MaxThesisGroupSize = 6).')
+      comment.Conclusion.forEach((student) => {
+        const flags = [student.Agree_to_defense, student.Revised_for_the_second_defense, student.Disagree_to_defense]
+        if (flags.filter((value) => value?.trim().toLowerCase() === 'x').length !== 1) {
+          errors.push(`${student.Roll || student.Name}: choose exactly one defense conclusion.`)
+        }
+        if (flags.some((value) => value && !['x', 'X'].includes(value))) errors.push(`${student.Roll}: conclusion values must be x or empty.`)
+      })
+    }
   }
 
   if (kind === 'defense-grading') {
     const defense = data as DefenseGrading
-    if (!Array.isArray(defense.GradeStudents)) errors.push('GradeStudents must be a list.')
-    else defense.GradeStudents.forEach((student) => student.GradedItems?.forEach((item) => {
-      if (!Number.isFinite(item.Scale) || item.Scale < 0) errors.push(`${student.Roll}: ${item.ItemName} has an invalid scale.`)
-      if (!Number.isFinite(item.Mark) || item.Mark < 0 || item.Mark > item.Scale) errors.push(`${student.Roll}: ${item.ItemName} mark must be between 0 and ${item.Scale}.`)
-      if (!Number.isFinite(item.GroupMark) || item.GroupMark < 0 || item.GroupMark > item.Scale) errors.push(`${student.Roll}: ${item.ItemName} group mark must be between 0 and ${item.Scale}.`)
-    }))
+    if (!defense.GradedTeacher?.trim()) {
+      errors.push('Evaluator name (GradedTeacher) is required.')
+    } else if (!/^[A-Za-z ]+$/.test(defense.GradedTeacher.trim())) {
+      errors.push('Evaluator name can only contain English letters (A-Z, a-z) and spaces without accents.')
+    }
+    if (!Array.isArray(defense.GradeStudents) || defense.GradeStudents.length === 0) {
+      errors.push('At least one student is required in defense.')
+    } else {
+      if (defense.GradeStudents.length > 6) errors.push('Defense group cannot exceed 6 students (MaxThesisGroupSize = 6).')
+      defense.GradeStudents.forEach((student) => student.GradedItems?.forEach((item) => {
+        if (!Number.isFinite(item.Scale) || item.Scale < 0) errors.push(`${student.Roll}: ${item.ItemName} has an invalid scale.`)
+        if (!Number.isFinite(item.Mark) || item.Mark < 0 || item.Mark > item.Scale) errors.push(`${student.Roll}: ${item.ItemName} mark must be between 0 and ${item.Scale}.`)
+        if (!Number.isFinite(item.GroupMark) || item.GroupMark < 0 || item.GroupMark > item.Scale) errors.push(`${student.Roll}: ${item.ItemName} group mark must be between 0 and ${item.Scale}.`)
+      }))
+    }
   }
 
   if (kind === 'final-thesis-grading-items') {

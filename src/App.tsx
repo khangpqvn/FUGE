@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Award, BarChart3, FileJson, FileText, FolderOpen, Lock, MessageSquare, Save, Table2, X } from 'lucide-react'
-import type { DefenseGrading, FinalThesisGradingItem, TeacherGrade, ThesisComment, WorkflowDocument } from './types/models'
+import { Award, BarChart3, FileJson, FileText, FolderOpen, Lock, LockOpen, MessageSquare, Save, Table2, X } from 'lucide-react'
+import type { DefenseGrading, FinalThesisGradingItem, SubjectClassGrade, TeacherGrade, ThesisComment, WorkflowDocument } from './types/models'
 import { canonicalJsonBlob } from './lib/canonical-json'
 import { validatePayload } from './lib/document-validation'
 import { PasswordRequiredError, importWorkflowFile } from './lib/file-import'
 import { blankCriteria, blankThesisComment } from './lib/blank-documents'
-import { configuredLegacyBridgeUrl, exportLegacyBinary, legacyExtensionForKind } from './lib/legacy-bridge'
+import { exportLegacyBinary, legacyExtensionForKind } from './lib/legacy-codec'
 import { downloadBlob, encryptLegacyFg } from './lib/legacy-fg'
 import { GradingSheetPanel } from './components/grading-sheet-panel'
 import { ThesisCommentPanel } from './components/thesis-comment-panel'
@@ -13,6 +13,8 @@ import { DefenseGradingPanel } from './components/defense-grading-panel'
 import { CriteriaPanel } from './components/criteria-panel'
 import { StartDefensePanel } from './components/start-defense-panel'
 import { SummaryResultsPanel } from './components/summary-results-panel'
+import { PasswordModal } from './components/password-modal'
+import { DefenseCouncilDesk } from './components/defense-council-desk'
 
 const KIND_LABEL = {
   'teacher-grade': 'Grading sheet',
@@ -36,6 +38,9 @@ export default function App() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [showSummary, setShowSummary] = useState(false)
+  const [showCouncilDesk, setShowCouncilDesk] = useState(false)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [readOnly, setReadOnly] = useState(false)
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
@@ -48,17 +53,24 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [dirty])
 
-  const openFile = async (file: File | undefined, suppliedPassword = '') => {
+  const openFile = async (file: File | undefined, suppliedPassword = '', asReadOnly = false) => {
     if (!file) return
     setBusy(true)
     setError('')
     setNotice('')
     try {
       if (dirty && !window.confirm('Discard unsaved changes and open another document?')) return
-      setDocument(await importWorkflowFile(file, suppliedPassword))
+      const doc = await importWorkflowFile(file, suppliedPassword, asReadOnly)
+      setDocument(doc)
+      setReadOnly(asReadOnly)
       setDirty(false)
       setPendingFile(null)
       setPassword('')
+      setShowCouncilDesk(false)
+      setShowSummary(false)
+      if (asReadOnly) {
+        setNotice('Document opened in READ ONLY mode.')
+      }
     } catch (cause) {
       if (cause instanceof PasswordRequiredError) {
         setPendingFile(file)
@@ -72,9 +84,61 @@ export default function App() {
   }
 
   const updateData = (data: TeacherGrade | ThesisComment | DefenseGrading | { items: FinalThesisGradingItem[] }) => {
-    if (!document) return
+    if (!document || readOnly) return
     setDocument({ ...document, data } as WorkflowDocument)
     setDirty(true)
+  }
+
+  const handlePasswordSave = (newHash: string) => {
+    if (!document) return
+    const currentData = document.data as Record<string, unknown>
+    if ('Password' in currentData) {
+      updateData({ ...currentData, Password: newHash } as unknown as TeacherGrade)
+      setNotice(newHash ? 'Document password updated.' : 'Document password removed.')
+    }
+  }
+
+  const createThesisCommentFromGroup = (group: SubjectClassGrade) => {
+    if (dirty && !window.confirm('Discard unsaved changes and create a thesis comment?')) return
+    const sheet = document?.data as TeacherGrade
+    const comment: ThesisComment = {
+      Teacher: sheet?.Login || '',
+      DT: new Date().toISOString(),
+      SubjectCode: group.Subject || '',
+      ClassName: group.Class || '',
+      Semester: sheet?.Semester || '',
+      Password: '',
+      TitleVN: '',
+      TitleEN: '',
+      Content: '',
+      Form: '',
+      Attitude: '',
+      Achievement: '',
+      Limitation: '',
+      Conclusion: group.Students.map((s) => ({
+        Roll: s.Roll,
+        Name: s.Name,
+        Agree_to_defense: null,
+        Revised_for_the_second_defense: null,
+        Disagree_to_defense: null,
+        Note: '',
+      })),
+    }
+    const newDoc: WorkflowDocument = {
+      format: 'fugrade.canonical',
+      schemaVersion: 1,
+      kind: 'thesis-comment',
+      metadata: {
+        fileName: `${sheet?.Login || 'teacher'}_${group.Subject}_${group.Class}.cmt`,
+        sourceFormat: 'cmt',
+        importedAt: new Date().toISOString(),
+      },
+      data: comment,
+    }
+    setDocument(newDoc)
+    setReadOnly(false)
+    setDirty(true)
+    setNotice(`Created thesis comment draft for ${group.Subject}/${group.Class} (${group.Students.length} students).`)
   }
 
   const exportJson = () => {
@@ -87,9 +151,22 @@ export default function App() {
 
   const exportLegacy = async () => {
     if (!document) return
+    if (readOnly) {
+      setError('Cannot export changes while in READ ONLY mode.')
+      return
+    }
     const problems = validatePayload(document.kind, document.data)
     if (problems.length) {
       setError(`Fix ${problems.length} validation issue(s) before exporting a legacy file.`)
+      return
+    }
+    const docData = document.data as Record<string, unknown>
+    if (
+      'Password' in docData &&
+      !docData.Password &&
+      !window.confirm('This document has no password set. In legacy FuGrade, setting a password is required when saving. Export without password? Click Cancel to set a password.')
+    ) {
+      setShowPasswordModal(true)
       return
     }
     setBusy(true)
@@ -115,6 +192,34 @@ export default function App() {
   }
 
   if (!document) {
+    if (showCouncilDesk) {
+      return (
+        <div className="mx-auto max-w-[110rem] px-4 py-8 sm:px-6">
+          <DefenseCouncilDesk
+            onStartDefense={(doc, ro) => {
+              setDocument(doc)
+              setReadOnly(Boolean(ro))
+              setShowCouncilDesk(false)
+              setDirty(!ro)
+            }}
+            onOpenSummary={() => {
+              setShowCouncilDesk(false)
+              setShowSummary(true)
+            }}
+            onClose={() => setShowCouncilDesk(false)}
+          />
+        </div>
+      )
+    }
+
+    if (showSummary) {
+      return (
+        <div className="mx-auto max-w-[110rem] px-4 py-8 sm:px-6">
+          <SummaryResultsPanel onClose={() => setShowSummary(false)} />
+        </div>
+      )
+    }
+
     return (
       <StartScreen
         busy={busy}
@@ -127,7 +232,8 @@ export default function App() {
           setPassword('')
           void openFile(file)
         }}
-        onUnlock={() => void openFile(pendingFile ?? undefined, password)}
+        onUnlock={() => void openFile(pendingFile ?? undefined, password, false)}
+        onUnlockReadOnly={() => void openFile(pendingFile ?? undefined, '', true)}
         onCancelUnlock={() => {
           setPendingFile(null)
           setPassword('')
@@ -138,15 +244,20 @@ export default function App() {
           setNotice('')
           setPendingFile(null)
           setDirty(false)
+          setReadOnly(false)
           setDocument(kind === 'thesis-comment' ? blankThesisComment() : blankCriteria())
         }}
+        onOpenCouncilDesk={() => setShowCouncilDesk(true)}
+        onOpenSummary={() => setShowSummary(true)}
       />
     )
   }
 
   const Icon = KIND_ICON[document.kind]
-  const bridgeReady = configuredLegacyBridgeUrl() !== ''
-  const legacyNeedsBridge = document.kind !== 'teacher-grade'
+  const currentPasswordHash =
+    document && 'Password' in (document.data as Record<string, unknown>)
+      ? (((document.data as Record<string, unknown>).Password as string) ?? '')
+      : null
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -157,16 +268,62 @@ export default function App() {
               <Icon size={20} />
             </span>
             <div className="min-w-0">
-              <h1 className="truncate text-base font-bold text-slate-900">
-                {KIND_LABEL[document.kind]}
-                <span className="ml-2 font-medium text-slate-500">{describeDocument(document)}</span>
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="truncate text-base font-bold text-slate-900">
+                  {KIND_LABEL[document.kind]}
+                  <span className="ml-2 font-medium text-slate-500">{describeDocument(document)}</span>
+                </h1>
+                {readOnly ? (
+                  <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-bold uppercase text-amber-800">
+                    Read Only
+                  </span>
+                ) : null}
+              </div>
               <p className="truncate text-xs text-slate-500">
                 {document.metadata.fileName} · source {document.metadata.sourceFormat} · schema v{document.schemaVersion}
               </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {currentPasswordHash !== null ? (
+              <button
+                type="button"
+                onClick={() => setShowPasswordModal(true)}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold transition ${
+                  currentPasswordHash
+                    ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                    : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                }`}
+                title={
+                  currentPasswordHash ? 'Password protected (click to manage)' : 'No password set (click to protect)'
+                }
+              >
+                {currentPasswordHash ? <Lock size={14} /> : <LockOpen size={14} />}
+                {currentPasswordHash ? 'Password set' : 'Set password'}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                if (dirty && !window.confirm('Discard unsaved changes and open council desk?')) return
+                setShowCouncilDesk(true)
+                setShowSummary(false)
+              }}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              <Award size={16} /> Council Desk
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (dirty && !window.confirm('Discard unsaved changes and open the summary?')) return
+                setShowSummary(true)
+                setShowCouncilDesk(false)
+              }}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              <BarChart3 size={16} /> Summary
+            </button>
             <button
               type="button"
               onClick={exportJson}
@@ -176,22 +333,12 @@ export default function App() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                if (dirty && !window.confirm('Discard unsaved changes and open the summary?')) return
-                setShowSummary(true)
-              }}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              <BarChart3 size={16} /> Summary
-            </button>
-            <button
-              type="button"
               onClick={exportLegacy}
-              disabled={busy || (legacyNeedsBridge && !bridgeReady)}
-              title={legacyNeedsBridge && !bridgeReady ? 'Set VITE_LEGACY_BRIDGE_URL to enable BinaryFormatter export.' : undefined}
+              disabled={busy || readOnly}
               className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              <Save size={16} /> {busy ? 'Working…' : `Export ${legacyNeedsBridge ? legacyExtensionForKind(document.kind) : '.fg'}`}
+              <Save size={16} />{' '}
+              {busy ? 'Working…' : `Export ${document.kind === 'teacher-grade' ? '.fg' : legacyExtensionForKind(document.kind)}`}
             </button>
             <button
               type="button"
@@ -199,6 +346,7 @@ export default function App() {
                 if (dirty && !window.confirm('Discard unsaved changes and close this document?')) return
                 setDocument(null)
                 setDirty(false)
+                setReadOnly(false)
                 setNotice('')
                 setError('')
               }}
@@ -209,23 +357,37 @@ export default function App() {
             </button>
           </div>
         </div>
-        {legacyNeedsBridge && !bridgeReady ? (
-          <p className="flex items-start gap-2 border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 sm:px-6">
-            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-            BinaryFormatter cannot run in the browser. Point <code className="font-mono">VITE_LEGACY_BRIDGE_URL</code> at the isolated converter to
-            import or export {legacyExtensionForKind(document.kind)} files. Canonical JSON export stays available.
-          </p>
-        ) : null}
         {error ? <p className="border-t border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 sm:px-6">{error}</p> : null}
         {notice ? <p className="border-t border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700 sm:px-6">{notice}</p> : null}
       </header>
 
       <main className="mx-auto w-full max-w-[110rem] flex-1 px-4 py-6 sm:px-6">
-        {showSummary ? <SummaryResultsPanel onClose={() => setShowSummary(false)} /> : null}
-        {!showSummary && document.kind === 'teacher-grade' ? (
-          <GradingSheetPanel sheet={document.data as TeacherGrade} onChange={updateData} />
+        {showCouncilDesk ? (
+          <DefenseCouncilDesk
+            onStartDefense={(doc, ro) => {
+              setDocument(doc)
+              setReadOnly(Boolean(ro))
+              setShowCouncilDesk(false)
+              setDirty(!ro)
+            }}
+            onOpenSummary={() => {
+              setShowCouncilDesk(false)
+              setShowSummary(true)
+            }}
+            onClose={() => setShowCouncilDesk(false)}
+          />
+        ) : showSummary ? (
+          <SummaryResultsPanel onClose={() => setShowSummary(false)} />
         ) : null}
-        {!showSummary && document.kind === 'thesis-comment' ? (
+
+        {!showCouncilDesk && !showSummary && document.kind === 'teacher-grade' ? (
+          <GradingSheetPanel
+            sheet={document.data as TeacherGrade}
+            onChange={updateData}
+            onCreateThesisComment={createThesisCommentFromGroup}
+          />
+        ) : null}
+        {!showCouncilDesk && !showSummary && document.kind === 'thesis-comment' ? (
           <div className="space-y-5">
             <ThesisCommentPanel comment={document.data as ThesisComment} onChange={updateData} />
             <StartDefensePanel
@@ -235,6 +397,7 @@ export default function App() {
                 setError('')
                 setNotice('Defense evaluation built from this thesis comment and the master criteria.')
                 setDirty(true)
+                setReadOnly(false)
                 setDocument({
                   format: 'fugrade.canonical',
                   schemaVersion: 1,
@@ -250,16 +413,23 @@ export default function App() {
             />
           </div>
         ) : null}
-        {!showSummary && document.kind === 'defense-grading' ? (
-          <DefenseGradingPanel defense={document.data as DefenseGrading} onChange={updateData} />
+        {!showCouncilDesk && !showSummary && document.kind === 'defense-grading' ? (
+          <DefenseGradingPanel defense={document.data as DefenseGrading} readOnly={readOnly} onChange={updateData} />
         ) : null}
-        {!showSummary && document.kind === 'final-thesis-grading-items' ? (
+        {!showCouncilDesk && !showSummary && document.kind === 'final-thesis-grading-items' ? (
           <CriteriaPanel
             items={(document.data as { items: FinalThesisGradingItem[] }).items}
             onChange={(items) => updateData({ items })}
           />
         ) : null}
       </main>
+
+      <PasswordModal
+        isOpen={showPasswordModal}
+        currentPasswordHash={currentPasswordHash ?? ''}
+        onSave={handlePasswordSave}
+        onClose={() => setShowPasswordModal(false)}
+      />
     </div>
   )
 }
@@ -272,8 +442,11 @@ function StartScreen({
   onPassword,
   onFile,
   onUnlock,
+  onUnlockReadOnly,
   onCancelUnlock,
   onBlank,
+  onOpenCouncilDesk,
+  onOpenSummary,
 }: {
   busy: boolean
   error: string
@@ -282,10 +455,14 @@ function StartScreen({
   onPassword: (value: string) => void
   onFile: (file: File | undefined) => void
   onUnlock: () => void
+  onUnlockReadOnly?: () => void
   onCancelUnlock: () => void
   onBlank: (kind: 'thesis-comment' | 'final-thesis-grading-items') => void
+  onOpenCouncilDesk: () => void
+  onOpenSummary: () => void
 }) {
-  const bridgeReady = configuredLegacyBridgeUrl() !== ''
+  const isTefFile = Boolean(pendingFileName?.toLowerCase().endsWith('.tef'))
+
   return (
     <div className="grid min-h-screen place-items-center px-4 py-10">
       <div className="w-full max-w-xl space-y-5">
@@ -295,8 +472,7 @@ function StartScreen({
           </span>
           <h1 className="mt-5 text-2xl font-extrabold text-slate-900">FUGE Grade Desk</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Open a FuGrade document. Grading sheets and canonical JSON run in the browser; the BinaryFormatter formats go through the isolated
-            converter.
+            Open and edit FuGrade documents directly in the browser. Legacy `.fg`, `.cmt`, and `.tef` files are handled locally; `.master` is criteria metadata.
           </p>
 
           {pendingFileName ? (
@@ -322,7 +498,7 @@ function StartScreen({
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500/30"
                 />
               </label>
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="submit"
                   disabled={busy || password === ''}
@@ -330,6 +506,15 @@ function StartScreen({
                 >
                   <Lock size={15} /> {busy ? 'Unlocking…' : 'Unlock'}
                 </button>
+                {isTefFile && onUnlockReadOnly ? (
+                  <button
+                    type="button"
+                    onClick={onUnlockReadOnly}
+                    className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
+                  >
+                    Open Read-Only
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={onCancelUnlock}
@@ -358,8 +543,22 @@ function StartScreen({
           ) : null}
 
           <div className="mt-6 border-t border-slate-100 pt-5">
-            <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Or start a new document</p>
+            <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Workflows & tools</p>
             <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={onOpenCouncilDesk}
+                className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-sm font-semibold text-purple-800 transition hover:bg-purple-100"
+              >
+                <Award size={16} /> Defense council desk
+              </button>
+              <button
+                type="button"
+                onClick={onOpenSummary}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                <BarChart3 size={16} /> Summary results
+              </button>
               <button
                 type="button"
                 onClick={() => onBlank('thesis-comment')}
@@ -379,8 +578,7 @@ function StartScreen({
         </div>
 
         <p className="px-2 text-xs leading-relaxed text-slate-500">
-          Converter status: {bridgeReady ? 'configured' : 'not configured'}. Without it, .cmt, .tef and .master files cannot be imported or written,
-          because BinaryFormatter is unsafe to run in a browser. Keep the original files as backups before any migration.
+          Legacy files are decoded locally with a bounded fixed-schema codec. Keep original files as backups before exporting edited copies.
         </p>
       </div>
     </div>
