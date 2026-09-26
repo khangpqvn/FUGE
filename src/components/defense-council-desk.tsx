@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Award, CheckCircle2, ChevronRight, FileCode, FolderOpen, KeyRound, Lock, ShieldAlert, Upload, Users, X } from 'lucide-react'
 import type { CanonicalDocument, DefenseGrading, FinalThesisGradingItem, ThesisComment } from '../types/models'
 import { criteriaForSubject, defenseFromComment, isPlainEvaluatorName } from '../lib/blank-documents'
 import { PasswordRequiredError, importWorkflowFile } from '../lib/file-import'
+import { loadBundledMasterCriteriaFile } from '../lib/bundled-master-criteria'
+import { openDefenseInNewTab } from '../lib/pending-defense-handoff'
 
 interface Props {
   onStartDefense: (defenseDoc: CanonicalDocument<DefenseGrading>, readOnly?: boolean) => void
@@ -71,15 +73,15 @@ export function DefenseCouncilDesk({ onStartDefense, onOpenSummary, onClose }: P
     }
   }
 
-  // Load criteria file (.master or .json)
-  const handleLoadCriteria = async (file: File | undefined) => {
-    if (!file) return
+  // The department master criteria ship inside the app bundle, so the council never picks a
+  // .master file. The bundled bytes go through the same legacy codec as any other import.
+  const loadCriteria = useCallback(async (file: File) => {
     setBusy(true)
     setError('')
     try {
       const doc = await importWorkflowFile(file, '')
       if (doc.kind !== 'final-thesis-grading-items') {
-        setError('Please select a valid .master criteria file or canonical JSON.')
+        setError('The bundled master criteria decoded to an unexpected document kind.')
         return
       }
       const items = (doc.data as { items: FinalThesisGradingItem[] }).items
@@ -87,11 +89,23 @@ export function DefenseCouncilDesk({ onStartDefense, onOpenSummary, onClose }: P
       setCriteriaName(file.name)
       setNotice(`Loaded criteria (${items.length} rules) from ${file.name}.`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to read criteria file.')
+      setError(err instanceof Error ? err.message : 'Failed to read the bundled master criteria.')
     } finally {
       setBusy(false)
     }
-  }
+  }, [])
+
+  // The ref guard keeps React StrictMode's double effect invocation from fetching it twice.
+  const autoLoaded = useRef(false)
+  useEffect(() => {
+    if (autoLoaded.current) return
+    autoLoaded.current = true
+    void loadBundledMasterCriteriaFile()
+      .then(loadCriteria)
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Failed to read the bundled master criteria.')
+      })
+  }, [loadCriteria])
 
   // Open existing .tef file directly
   const handleOpenTef = async (file: File | undefined, readOnly: boolean, passwordToUse = '') => {
@@ -199,7 +213,9 @@ export function DefenseCouncilDesk({ onStartDefense, onOpenSummary, onClose }: P
       data: result,
     }
 
-    onStartDefense(doc, false)
+    // Grade each group in its own tab so a council member can hold several sheets open at once.
+    // A blocked popup must not cost the sheet, so fall back to this tab.
+    if (!openDefenseInNewTab(doc)) onStartDefense(doc, false)
   }
 
   return (
@@ -211,9 +227,6 @@ export function DefenseCouncilDesk({ onStartDefense, onOpenSummary, onClose }: P
           </span>
           <div>
             <h2 className="text-lg font-bold text-slate-800">Defense Council Desk (Hội đồng chấm bảo vệ)</h2>
-            <p className="text-xs text-slate-500">
-              Mirroring legacy FrmDefenseGrading: load supervisor comments (.cmt), pick criteria (.master), and grade groups.
-            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -358,31 +371,24 @@ export function DefenseCouncilDesk({ onStartDefense, onOpenSummary, onClose }: P
                 </span>
               </label>
 
-              <label className="block">
+              <div className="block">
                 <span className="mb-1 block text-xs font-semibold tracking-wide text-slate-600 uppercase">
-                  Master Criteria (.master)
+                  Master Criteria
                 </span>
-                <span className="flex cursor-pointer items-center justify-between rounded-lg border border-slate-300 bg-slate-50/50 px-3 py-2 text-xs text-slate-600 hover:bg-slate-100">
-                  <span className="truncate">{criteriaName || 'Choose .master file'}</span>
-                  <Upload size={14} className="shrink-0 text-slate-400" />
-                  <input
-                    type="file"
-                    accept=".master,.json"
-                    className="hidden"
-                    disabled={busy}
-                    onChange={(e) => void handleLoadCriteria(e.target.files?.[0])}
-                  />
+                <span className="flex items-center justify-between rounded-lg border border-slate-300 bg-slate-50/50 px-3 py-2 text-xs text-slate-600">
+                  <span className="truncate">{criteriaName || 'Loading bundled criteria…'}</span>
+                  {busy ? (
+                    <Upload size={14} className="shrink-0 animate-pulse text-slate-400" />
+                  ) : (
+                    <CheckCircle2 size={14} className="shrink-0 text-emerald-500" />
+                  )}
                 </span>
-                {criteria ? (
-                  <span className="mt-1 flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
-                    <CheckCircle2 size={12} /> {criteria.length} criteria loaded
-                  </span>
-                ) : (
-                  <span className="mt-1 block text-[11px] text-amber-600">
-                    Required: load FinalThesisGradingItems.master
-                  </span>
-                )}
-              </label>
+                <span className="mt-1 block text-[11px] text-slate-400">
+                  {criteria
+                    ? `${criteria.length} criteria bundled with the app. To grade a different major, open its .master from the Master criteria screen.`
+                    : 'Bundled with the app, no file needed.'}
+                </span>
+              </div>
 
               {availableSubjectsInCriteria.length > 1 ? (
                 <label className="block">

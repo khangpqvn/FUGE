@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Award, Upload } from 'lucide-react'
 import type { FinalThesisGradingItem, ThesisComment } from '../types/models'
 import { criteriaForSubject, defenseFromComment } from '../lib/blank-documents'
 import { importWorkflowFile } from '../lib/file-import'
+import { loadBundledMasterCriteriaFile } from '../lib/bundled-master-criteria'
 import { PanelSection } from './form-controls'
 
 interface Props {
@@ -20,7 +21,7 @@ export function StartDefensePanel({ comment, onStart }: Props) {
 
   const matching = criteria ? criteriaForSubject(criteria, comment.SubjectCode) : []
 
-  const loadCriteria = async (file: File | undefined) => {
+  const loadCriteria = useCallback(async (file: File | undefined) => {
     if (!file) return
     setBusy(true)
     setError('')
@@ -37,7 +38,20 @@ export function StartDefensePanel({ comment, onStart }: Props) {
     } finally {
       setBusy(false)
     }
-  }
+  }, [])
+
+  // The department master criteria ship inside the bundle, so grading starts without a file hunt.
+  // The ref guard keeps React StrictMode's double effect invocation from fetching it twice.
+  const autoLoaded = useRef(false)
+  useEffect(() => {
+    if (autoLoaded.current) return
+    autoLoaded.current = true
+    void loadBundledMasterCriteriaFile()
+      .then(loadCriteria)
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'Could not load the bundled master criteria.')
+      })
+  }, [loadCriteria])
 
   const start = () => {
     const result = defenseFromComment(comment, criteria ?? [], evaluator)

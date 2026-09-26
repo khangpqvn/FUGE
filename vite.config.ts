@@ -7,4 +7,7 @@ export default defineConfig({
   define: {
     global: 'globalThis',
   },
+  // The department master criteria is a BinaryFormatter stream, not a JS/TS/CSS asset, so it
+  // needs to be declared inlinable before `?url` will resolve it at build time.
+  assetsInclude: ['**/*.master'],
 })

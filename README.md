@@ -38,8 +38,9 @@ per-student defense conclusion, which must be exactly one of agree, revise, or d
 Replicates `FrmDefenseGrading`:
 - Council members can batch-load thesis comment files (`.cmt`) or select a folder of groups.
 - Displays a table of all candidate defense groups with agreement counts.
-- Load master criteria (`.master`), resolve subject code ambiguity (`FrmChooseSujectCode`), and enter the evaluator name (accents rejected per legacy rule).
-- Generates the evaluation grid for the group with group mark, copy-group-mark action, individual marks capped at each criterion's scale, running totals, group note, and read-only supervisor comment.
+- Master criteria (`.master`) ship inside the app bundle and load automatically, so the council never picks a file; a different barem can still be opened from the Master criteria screen.
+- Resolves subject code ambiguity (`FrmChooseSujectCode`) and requires the evaluator name (accents rejected per legacy rule).
+- Opens each group's evaluation grid in a new browser tab, so a council member can hold several sheets open at once. When the browser blocks the popup, the sheet opens in the current tab instead.
 - Supports opening existing `.tef` files in Edit mode or Read-Only mode.
 
 ### 4. Defense summary & Excel export (`.xlsx`)
@@ -84,8 +85,10 @@ npm test
 
 `.cmt`, `.tef`, and `.master` are legacy .NET `BinaryFormatter` streams. This app handles them
 locally with a bounded fixed-schema TypeScript codec. It never executes code or resolves
-arbitrary types from a file. `.master` is imported as criteria metadata for defense creation;
-canonical JSON is the session/metadata interchange format rather than a standalone workflow.
+arbitrary types from a file. The department master criteria ship as
+`src/template/FinalThesisGradingItems.master` and are decoded through the same codec as any
+picked `.master`, so there is one decode path. Canonical JSON is the session/metadata
+interchange format rather than a standalone workflow.
 
 The codec enforces file, string, collection, object-count, and nesting limits and rejects
 unknown roots, members, references, and records. The writer uses fixed FuGrade schemas and

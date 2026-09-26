@@ -87,9 +87,9 @@ Hội đồng bảo vệ có thể xử lý tập trung nhiều nhóm bảo vệ
 
 ### 3.2. Cấu hình Cán bộ Chấm & Barem Điểm
 1. **Họ tên cán bộ chấm (`Evaluator Full Name`)**: Nhập họ tên không dấu (ví dụ: `Nguyen Van An`). Quy chuẩn tệp legacy bắt buộc chỉ dùng chữ cái không dấu và khoảng trắng.
-2. **Nạp barem tiêu chí (`Master Criteria`)**: Bấm chọn tệp `FinalThesisGradingItems.master` do bộ môn ban hành.
+2. **Barem tiêu chí (`Master Criteria`)**: Đã được đóng gói sẵn trong ứng dụng và tự nạp, không cần chọn tệp. Nếu bộ môn ban hành barem mới, xuất file `.master` từ màn hình **Master criteria** rồi nạp tại màn hình chấm theo nhóm đồ án (`Start a defense evaluation`).
 3. **Chọn mã môn (`Select Subject Code`)**: Nếu tệp barem có nhiều mã môn tương thích, chọn mã môn cụ thể cho nhóm (ví dụ: `SEP490`).
-4. Bấm **"Grade Selected Group"** để mở bảng chấm điểm chi tiết.
+4. Bấm **"Grade Selected Group"** để mở bảng chấm điểm chi tiết **trong một tab mới**, giúp cán bộ chấm mở nhiều nhóm song song. Nếu trình duyệt chặn cửa sổ mới, phiếu sẽ mở ngay tại tab hiện tại.
 
 ### 3.3. Chấm Điểm Bảo vệ
 1. **Chấm điểm nhóm (`Group mark`)**: Nhập điểm đánh giá chung cho cả nhóm vào cột Group mark.
@@ -120,7 +120,7 @@ Hội đồng bảo vệ có thể xử lý tập trung nhiều nhóm bảo vệ
    - **Sheet 2 (`Graded statistics`)**: Thống kê lượt chấm của từng giảng viên.
 
 ### 4.2. Quản lý Danh mục Tiêu chí Chấm Đồ án (`.master`)
-1. Bấm nút **"Master criteria"** tại màn hình khởi động (hoặc mở tệp `FinalThesisGradingItems.master`).
+1. Bấm nút **"Master criteria"** tại màn hình khởi động. Màn hình này dùng để xem, chỉnh sửa và xuất barem; nó không phải nơi cán bộ chấm nạp barem khi chấm điểm vì barem đã nằm sẵn trong ứng dụng.
 2. Lọc tiêu chí theo mã môn ở góc phải trên.
 3. **Thêm tiêu chí mới**: Điền Subject, Major, Minor, Item group, Grading item, Scale trong mục **"Add criterion"** và bấm **"Add criterion"**.
 4. **Sửa tiêu chí**: Bấm trực tiếp vào ô cần sửa trên bảng và gõ nội dung mới.

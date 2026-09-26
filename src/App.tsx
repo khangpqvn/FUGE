@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Award, BarChart3, FileJson, FileText, FolderOpen, Lock, LockOpen, MessageSquare, Save, Table2, X } from 'lucide-react'
 import type { DefenseGrading, FinalThesisGradingItem, SubjectClassGrade, TeacherGrade, ThesisComment, WorkflowDocument } from './types/models'
 import { canonicalJsonBlob } from './lib/canonical-json'
@@ -7,6 +7,7 @@ import { PasswordRequiredError, importWorkflowFile } from './lib/file-import'
 import { blankCriteria, blankThesisComment } from './lib/blank-documents'
 import { exportLegacyBinary, legacyExtensionForKind } from './lib/legacy-codec'
 import { downloadBlob, encryptLegacyFg } from './lib/legacy-fg'
+import { takePendingDefense } from './lib/pending-defense-handoff'
 import { GradingSheetPanel } from './components/grading-sheet-panel'
 import { ThesisCommentPanel } from './components/thesis-comment-panel'
 import { DefenseGradingPanel } from './components/defense-grading-panel'
@@ -52,6 +53,21 @@ export default function App() {
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [dirty])
+
+  // A sheet opened by "Grade Selected Group" arrives here through the URL, since a new tab starts
+  // with no document. The ref guard matters: without it StrictMode's second invocation would read
+  // the handoff key after takePendingDefense already removed it, and blank the sheet.
+  const handoffRead = useRef(false)
+  useEffect(() => {
+    if (handoffRead.current) return
+    handoffRead.current = true
+    const pending = takePendingDefense()
+    if (!pending) return
+    setDocument(pending)
+    setReadOnly(false)
+    setDirty(true)
+    setNotice('Defense sheet opened in a new tab. Marks are unsaved until you export.')
+  }, [])
 
   const openFile = async (file: File | undefined, suppliedPassword = '', asReadOnly = false) => {
     if (!file) return
@@ -304,35 +320,6 @@ export default function App() {
             ) : null}
             <button
               type="button"
-              onClick={() => {
-                if (dirty && !window.confirm('Discard unsaved changes and open council desk?')) return
-                setShowCouncilDesk(true)
-                setShowSummary(false)
-              }}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              <Award size={16} /> Council Desk
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (dirty && !window.confirm('Discard unsaved changes and open the summary?')) return
-                setShowSummary(true)
-                setShowCouncilDesk(false)
-              }}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              <BarChart3 size={16} /> Summary
-            </button>
-            <button
-              type="button"
-              onClick={exportJson}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              <FileJson size={16} /> Export JSON
-            </button>
-            <button
-              type="button"
               onClick={exportLegacy}
               disabled={busy || readOnly}
               className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
@@ -471,9 +458,6 @@ function StartScreen({
             <FolderOpen size={26} />
           </span>
           <h1 className="mt-5 text-2xl font-extrabold text-slate-900">FUGE Grade Desk</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Open and edit FuGrade documents directly in the browser. Legacy `.fg`, `.cmt`, and `.tef` files are handled locally; `.master` is criteria metadata.
-          </p>
 
           {pendingFileName ? (
             <form
@@ -527,10 +511,10 @@ function StartScreen({
           ) : (
             <label className="mt-6 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 active:scale-[.99]">
               <FolderOpen size={18} />
-              {busy ? 'Opening…' : 'Open .fg, .cmt, .tef, .master or .json'}
+              {busy ? 'Opening…' : 'Open .fg, .cmt, .tef'}
               <input
                 type="file"
-                accept=".fg,.cmt,.tef,.master,.json"
+                accept=".fg,.cmt,.tef"
                 className="hidden"
                 disabled={busy}
                 onChange={(event) => onFile(event.target.files?.[0])}
@@ -543,7 +527,7 @@ function StartScreen({
           ) : null}
 
           <div className="mt-6 border-t border-slate-100 pt-5">
-            <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Workflows & tools</p>
+            <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Thesis zone</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
@@ -559,21 +543,7 @@ function StartScreen({
               >
                 <BarChart3 size={16} /> Summary results
               </button>
-              <button
-                type="button"
-                onClick={() => onBlank('thesis-comment')}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <MessageSquare size={16} /> Thesis comment
-              </button>
-              <button
-                type="button"
-                onClick={() => onBlank('final-thesis-grading-items')}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <FileText size={16} /> Master criteria
-              </button>
-            </div>
+              </div>
           </div>
         </div>
 
