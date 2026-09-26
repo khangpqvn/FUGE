@@ -444,7 +444,7 @@ export function DefenseCouncilDesk({ onStartDefense, onOpenSummary, onClose }: P
                 Open to Edit
                 <input
                   type="file"
-                  accept=".tef,.json"
+                  accept=".tef"
                   className="hidden"
                   onChange={(e) => void handleOpenTef(e.target.files?.[0], false)}
                 />
@@ -453,7 +453,7 @@ export function DefenseCouncilDesk({ onStartDefense, onOpenSummary, onClose }: P
                 Open Read-Only
                 <input
                   type="file"
-                  accept=".tef,.json"
+                  accept=".tef"
                   className="hidden"
                   onChange={(e) => void handleOpenTef(e.target.files?.[0], true)}
                 />

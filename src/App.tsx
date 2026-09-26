@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Award, BarChart3, FileJson, FileText, FolderOpen, Lock, LockOpen, MessageSquare, Save, Table2, X } from 'lucide-react'
-import type { DefenseGrading, FinalThesisGradingItem, SubjectClassGrade, TeacherGrade, ThesisComment, WorkflowDocument } from './types/models'
+import type { DefenseGrading, DocumentKind, FinalThesisGradingItem, SubjectClassGrade, TeacherGrade, ThesisComment, WorkflowDocument } from './types/models'
 import { canonicalJsonBlob } from './lib/canonical-json'
 import { validatePayload } from './lib/document-validation'
 import { PasswordRequiredError, importWorkflowFile } from './lib/file-import'
@@ -30,6 +30,13 @@ const KIND_ICON = {
   'defense-grading': Award,
   'final-thesis-grading-items': FileText,
 } as const
+
+/**
+ * Legacy .fg, .cmt and .tef documents all carry a Password field, and legacy FuGrade refuses to
+ * save them unprotected, so an export of these kinds is blocked until a password is set. Master
+ * criteria (.master) have no such field and stay exportable.
+ */
+const PASSWORD_REQUIRED_KINDS: DocumentKind[] = ['teacher-grade', 'thesis-comment', 'defense-grading']
 
 export default function App() {
   const [document, setDocument] = useState<WorkflowDocument | null>(null)
@@ -177,11 +184,8 @@ export default function App() {
       return
     }
     const docData = document.data as Record<string, unknown>
-    if (
-      'Password' in docData &&
-      !docData.Password &&
-      !window.confirm('This document has no password set. In legacy FuGrade, setting a password is required when saving. Export without password? Click Cancel to set a password.')
-    ) {
+    if (PASSWORD_REQUIRED_KINDS.includes(document.kind) && !String(docData.Password ?? '').trim()) {
+      setError('This legacy file has no password set. Set a password before exporting.')
       setShowPasswordModal(true)
       return
     }
@@ -511,7 +515,7 @@ function StartScreen({
           ) : (
             <label className="mt-6 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 active:scale-[.99]">
               <FolderOpen size={18} />
-              {busy ? 'Opening…' : 'Open .fg, .cmt, .tef'}
+              {busy ? 'Opening…' : 'Open .fg, .cmt, .tef (For edit)'}
               <input
                 type="file"
                 accept=".fg,.cmt,.tef"
