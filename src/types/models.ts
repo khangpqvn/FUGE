@@ -111,6 +111,50 @@ export interface CanonicalDocument<T> {
   data: T
 }
 
+export interface FinalGradeOfTeacher {
+  GradedTeacher: string
+  Mark: number
+}
+
+export interface FinalGrade {
+  Roll: string
+  Name: string
+  SubjectCode: string
+  ClassName: string
+  Semester: string
+  Supervisor: string
+  Title: string
+  Scale: number
+  Note: string
+  DateTime: string
+  GradedBy: string
+  ListFGOT: FinalGradeOfTeacher[]
+  AvgMark: number
+}
+
+export interface GradedTeacherSummary {
+  Name: string
+  Subject: string
+  GroupName: string
+  Title: string
+  Supervisor: string
+  DT: string
+}
+
+export interface DefenseGroupSignature {
+  Semester: string
+  SubjectCode: string
+  ClassName: string
+  Rolls: string[]
+}
+
+export interface SummaryResult {
+  grades: FinalGrade[]
+  teachers: GradedTeacherSummary[]
+  groups: number
+  students: number
+}
+
 export type FinalThesisGradingItemsDocument = CanonicalDocument<{ items: FinalThesisGradingItem[] }>
 export type WorkflowDocument =
   | CanonicalDocument<TeacherGrade>

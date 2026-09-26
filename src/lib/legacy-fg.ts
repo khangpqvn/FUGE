@@ -129,8 +129,12 @@ function md5(input: string) {
   return [a, b, c, d].flatMap((value) => [0, 8, 16, 24].map((shift) => ((value >>> shift) & 0xff).toString(16).padStart(2, '0'))).join('')
 }
 
+export function hashLegacyPassword(value: string) {
+  return md5(value).toLowerCase()
+}
+
 export async function verifyMd5(value: string, expected: string) {
-  return md5(value).toLowerCase() === expected.toLowerCase()
+  return hashLegacyPassword(value) === expected.toLowerCase()
 }
 
 export function downloadBlob(blob: Blob, fileName: string) {

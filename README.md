@@ -91,8 +91,7 @@ Until `VITE_LEGACY_BRIDGE_URL` is set, importing those three formats fails with 
 message and their legacy export button stays disabled. JSON export is always available, so
 no work is lost.
 
-**This converter is not implemented in this repository yet.** It needs a Windows/.NET
-toolchain that is not present in the current environment.
+A converter project is now included under `tools/legacy-bridge/`, but it still requires a Windows/.NET Framework build toolchain and the original legacy assemblies. The current environment has no `dotnet`, `msbuild`, or `xbuild`, so binary bridge compilation and original application round-trips remain unverified.
 
 ## Compatibility notes
 
@@ -111,7 +110,7 @@ download; no uploaded file is ever modified in place.
 
 ## Verified
 
-`npm run build` and `npm test` pass (71 unit tests, including an AES round trip against the
+`npm run build` and `npm test` pass (76 unit tests, including an AES round trip against the
 real `khangpq3Summer2026.fg` file and an MD5 differential check across block boundaries).
 
 The four panels were also driven in a real headless Chrome against the dev server, for 76

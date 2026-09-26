@@ -1,6 +1,7 @@
 import type { DocumentKind, WorkflowDocument } from '../types/models'
 
 const MAX_BINARY_BYTES = 8 * 1024 * 1024
+const BRIDGE_TIMEOUT_MS = 15_000
 const EXTENSION_KIND: Record<string, DocumentKind> = {
   '.cmt': 'thesis-comment',
   '.tef': 'defense-grading',
@@ -21,7 +22,7 @@ export async function importLegacyBinary(file: File): Promise<WorkflowDocument> 
 
   const form = new FormData()
   form.append('file', file, file.name)
-  const response = await fetch(`${baseUrl}/api/legacy/import?kind=${kind}`, { method: 'POST', body: form })
+  const response = await fetchWithTimeout(`${baseUrl}/api/legacy/import?kind=${kind}`, { method: 'POST', body: form })
   if (!response.ok) throw new Error(await readBridgeError(response))
   const result = await response.json() as unknown
   return validateBridgeDocument(result, kind, file.name)
@@ -38,7 +39,7 @@ export async function exportLegacyBinary(document: WorkflowDocument): Promise<Bl
   const baseUrl = configuredLegacyBridgeUrl()
   if (!baseUrl) throw new Error('Legacy binary converter is not configured; JSON export remains available.')
 
-  const response = await fetch(`${baseUrl}/api/legacy/export?kind=${document.kind}`, {
+  const response = await fetchWithTimeout(`${baseUrl}/api/legacy/export?kind=${document.kind}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(document),
@@ -81,6 +82,19 @@ async function readBridgeError(response: Response) {
     // Use a generic error when the converter did not return JSON.
   }
   return `Legacy converter failed with status ${response.status}.`
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit) {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === 'AbortError') throw new Error('Legacy converter timed out.')
+    throw new Error('Legacy converter is unavailable.')
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

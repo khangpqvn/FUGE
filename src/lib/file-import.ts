@@ -41,6 +41,11 @@ export async function importWorkflowFile(file: File, password: string): Promise<
     document.metadata.sourceFormat = 'json'
   } else if (extension === '.cmt' || extension === '.tef' || extension === '.master') {
     document = await importLegacyBinary(file)
+    const protectedHash = protectedPasswordHash(document)
+    if (protectedHash) {
+      if (!password) throw new PasswordRequiredError()
+      if (!(await verifyMd5(password, protectedHash))) throw new Error('Incorrect password for this grading file.')
+    }
   } else {
     throw new Error('Unsupported file. Choose .fg, .cmt, .tef, .master, or canonical .json.')
   }
@@ -58,6 +63,12 @@ function wrap(kind: DocumentKind, data: TeacherGrade | ThesisComment | DefenseGr
     metadata: { fileName, sourceFormat, importedAt: new Date().toISOString() },
     data,
   } as WorkflowDocument
+}
+
+function protectedPasswordHash(document: WorkflowDocument) {
+  if (document.kind === 'thesis-comment') return (document.data as ThesisComment).Password.trim()
+  if (document.kind === 'defense-grading') return (document.data as DefenseGrading).Password.trim()
+  return ''
 }
 
 function extensionOf(fileName: string) {

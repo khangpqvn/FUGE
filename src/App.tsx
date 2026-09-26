@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { AlertTriangle, Award, FileJson, FileText, FolderOpen, Lock, MessageSquare, Save, Table2, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AlertTriangle, Award, BarChart3, FileJson, FileText, FolderOpen, Lock, MessageSquare, Save, Table2, X } from 'lucide-react'
 import type { DefenseGrading, FinalThesisGradingItem, TeacherGrade, ThesisComment, WorkflowDocument } from './types/models'
 import { canonicalJsonBlob } from './lib/canonical-json'
 import { validatePayload } from './lib/document-validation'
@@ -12,6 +12,7 @@ import { ThesisCommentPanel } from './components/thesis-comment-panel'
 import { DefenseGradingPanel } from './components/defense-grading-panel'
 import { CriteriaPanel } from './components/criteria-panel'
 import { StartDefensePanel } from './components/start-defense-panel'
+import { SummaryResultsPanel } from './components/summary-results-panel'
 
 const KIND_LABEL = {
   'teacher-grade': 'Grading sheet',
@@ -34,6 +35,18 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [showSummary, setShowSummary] = useState(false)
+  const [dirty, setDirty] = useState(false)
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirty) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [dirty])
 
   const openFile = async (file: File | undefined, suppliedPassword = '') => {
     if (!file) return
@@ -41,7 +54,9 @@ export default function App() {
     setError('')
     setNotice('')
     try {
+      if (dirty && !window.confirm('Discard unsaved changes and open another document?')) return
       setDocument(await importWorkflowFile(file, suppliedPassword))
+      setDirty(false)
       setPendingFile(null)
       setPassword('')
     } catch (cause) {
@@ -59,12 +74,14 @@ export default function App() {
   const updateData = (data: TeacherGrade | ThesisComment | DefenseGrading | { items: FinalThesisGradingItem[] }) => {
     if (!document) return
     setDocument({ ...document, data } as WorkflowDocument)
+    setDirty(true)
   }
 
   const exportJson = () => {
     if (!document) return
     setError('')
     downloadBlob(canonicalJsonBlob(document), `${baseName(document.metadata.fileName)}.fuge.json`)
+    setDirty(false)
     setNotice('Canonical JSON downloaded.')
   }
 
@@ -82,10 +99,12 @@ export default function App() {
       if (document.kind === 'teacher-grade') {
         const blob = await encryptLegacyFg(document.data as TeacherGrade)
         downloadBlob(blob, `${baseName(document.metadata.fileName)}.fg`)
+        setDirty(false)
         setNotice('Legacy .fg downloaded. Open it in FuGrade to confirm the round trip.')
       } else {
         const blob = await exportLegacyBinary(document)
         downloadBlob(blob, `${baseName(document.metadata.fileName)}${legacyExtensionForKind(document.kind)}`)
+        setDirty(false)
         setNotice(`Legacy ${legacyExtensionForKind(document.kind)} downloaded from the converter.`)
       }
     } catch (cause) {
@@ -118,6 +137,7 @@ export default function App() {
           setError('')
           setNotice('')
           setPendingFile(null)
+          setDirty(false)
           setDocument(kind === 'thesis-comment' ? blankThesisComment() : blankCriteria())
         }}
       />
@@ -156,6 +176,16 @@ export default function App() {
             </button>
             <button
               type="button"
+              onClick={() => {
+                if (dirty && !window.confirm('Discard unsaved changes and open the summary?')) return
+                setShowSummary(true)
+              }}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              <BarChart3 size={16} /> Summary
+            </button>
+            <button
+              type="button"
               onClick={exportLegacy}
               disabled={busy || (legacyNeedsBridge && !bridgeReady)}
               title={legacyNeedsBridge && !bridgeReady ? 'Set VITE_LEGACY_BRIDGE_URL to enable BinaryFormatter export.' : undefined}
@@ -166,7 +196,9 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
+                if (dirty && !window.confirm('Discard unsaved changes and close this document?')) return
                 setDocument(null)
+                setDirty(false)
                 setNotice('')
                 setError('')
               }}
@@ -189,10 +221,11 @@ export default function App() {
       </header>
 
       <main className="mx-auto w-full max-w-[110rem] flex-1 px-4 py-6 sm:px-6">
-        {document.kind === 'teacher-grade' ? (
+        {showSummary ? <SummaryResultsPanel onClose={() => setShowSummary(false)} /> : null}
+        {!showSummary && document.kind === 'teacher-grade' ? (
           <GradingSheetPanel sheet={document.data as TeacherGrade} onChange={updateData} />
         ) : null}
-        {document.kind === 'thesis-comment' ? (
+        {!showSummary && document.kind === 'thesis-comment' ? (
           <div className="space-y-5">
             <ThesisCommentPanel comment={document.data as ThesisComment} onChange={updateData} />
             <StartDefensePanel
@@ -201,6 +234,7 @@ export default function App() {
                 if ('error' in result) return
                 setError('')
                 setNotice('Defense evaluation built from this thesis comment and the master criteria.')
+                setDirty(true)
                 setDocument({
                   format: 'fugrade.canonical',
                   schemaVersion: 1,
@@ -216,10 +250,10 @@ export default function App() {
             />
           </div>
         ) : null}
-        {document.kind === 'defense-grading' ? (
+        {!showSummary && document.kind === 'defense-grading' ? (
           <DefenseGradingPanel defense={document.data as DefenseGrading} onChange={updateData} />
         ) : null}
-        {document.kind === 'final-thesis-grading-items' ? (
+        {!showSummary && document.kind === 'final-thesis-grading-items' ? (
           <CriteriaPanel
             items={(document.data as { items: FinalThesisGradingItem[] }).items}
             onChange={(items) => updateData({ items })}
