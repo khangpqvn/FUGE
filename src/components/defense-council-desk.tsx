@@ -273,7 +273,7 @@ export function DefenseCouncilDesk({ onStartDefense, onOpenSummary, onClose }: P
                 <input
                   type="file"
                   multiple
-                  accept=".cmt,.json"
+                  accept=".cmt"
                   className="hidden"
                   disabled={busy}
                   onChange={(e) => void handleLoadCmtFiles(e.target.files)}
@@ -283,7 +283,7 @@ export function DefenseCouncilDesk({ onStartDefense, onOpenSummary, onClose }: P
                 <FolderOpen size={14} /> Choose Folder
                 <input
                   type="file"
-                  accept=".cmt,.json"
+                  accept=".cmt"
                   className="hidden"
                   {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
                   disabled={busy}

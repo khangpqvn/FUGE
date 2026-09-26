@@ -38,11 +38,11 @@ export function SummaryResultsPanel({ initialResult, onClose }: { initialResult?
         <div className="flex flex-wrap items-center gap-3">
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700">
             <Upload size={16} /> {busy ? 'Reading…' : files || 'Choose defense files'}
-            <input type="file" multiple accept=".json,.tef" className="hidden" disabled={busy} onChange={(event) => void loadFiles(event.target.files)} />
+            <input type="file" multiple accept=".tef" className="hidden" disabled={busy} onChange={(event) => void loadFiles(event.target.files)} />
           </label>
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
             Choose folder
-            <input type="file" accept=".json,.tef" className="hidden" {...({ webkitdirectory: '', directory: '' } as Record<string, string>)} disabled={busy} onChange={(event) => void loadFiles(event.target.files)} />
+            <input type="file" accept=".tef" className="hidden" {...({ webkitdirectory: '', directory: '' } as Record<string, string>)} disabled={busy} onChange={(event) => void loadFiles(event.target.files)} />
           </label>
           <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50">Back</button>
           {result ? (

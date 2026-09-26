@@ -73,10 +73,10 @@ export function StartDefensePanel({ comment, onStart }: Props) {
           <span className="mb-1 block text-xs font-semibold tracking-wide text-slate-500 uppercase">Master criteria</span>
           <span className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50">
             <Upload size={15} />
-            <span className="truncate">{criteriaName || (busy ? 'Reading…' : 'Choose .master or .json')}</span>
+            <span className="truncate">{criteriaName || (busy ? 'Reading…' : 'Choose .master')}</span>
             <input
               type="file"
-              accept=".master,.json"
+              accept=".master"
               className="hidden"
               disabled={busy}
               onChange={(event) => void loadCriteria(event.target.files?.[0])}
